@@ -1,0 +1,141 @@
+seed_everything: 77
+# ---------------------------- TRAINER -------------------------------------------
+trainer:
+  default_root_dir: "/weatherIGM/model_archive"
+  precision: 32 # 16 may cause NaNs and inf in metrics after denormalization
+  num_nodes: 1
+  devices: [0, 1, 2, 3, 4, 5, 6, 7]
+  accelerator: gpu
+  strategy: ddp
+  min_epochs: 1
+  max_epochs: 100
+  enable_progress_bar: true
+  sync_batchnorm: True
+  enable_checkpointing: True
+  detect_anomaly: False
+  fast_dev_run: false
+
+  logger:
+    class_path: pytorch_lightning.loggers.tensorboard.TensorBoardLogger
+    init_args:
+      save_dir: ${trainer.default_root_dir}/logs
+      name: null
+      version: null
+      log_graph: False
+      default_hp_metric: True
+      prefix: ""
+
+  callbacks:
+    - class_path: pytorch_lightning.callbacks.LearningRateMonitor
+      init_args:
+        logging_interval: "step"
+
+    - class_path: pytorch_lightning.callbacks.ModelCheckpoint
+      init_args:
+        dirpath: "${trainer.default_root_dir}/checkpoints"
+        monitor: "val/w_rmse"
+        mode: "min"
+        save_top_k: 1
+        save_last: True
+        verbose: False
+        filename: "epoch_{epoch:03d}"
+        auto_insert_metric_name: False
+
+    - class_path: pytorch_lightning.callbacks.EarlyStopping
+      init_args:
+        monitor: "val/w_rmse"
+        mode: "min"
+        patience: 15
+        min_delta: 0.
+
+    - class_path: pytorch_lightning.callbacks.RichModelSummary
+      init_args:
+        max_depth: -1
+
+# ---------------------------- MODEL -------------------------------------------
+model:
+  pretrained_path: ""
+  train_cfg:
+    lr: 5e-4
+    beta_1: 0.9
+    beta_2: 0.99
+    weight_decay: 1e-5
+    warmup_epochs: 5000
+    max_epochs: 100000
+    warmup_start_lr: 1e-5
+    eta_min: 1e-8
+  net:
+    class_path: models.model.model
+    init_args:
+      img_size: [121, 240]
+      use_time_emb: True
+      constant_vars: [
+        "lat_emb",
+        "lon_emb",
+        "geopotential_at_surface",
+        "land_sea_mask",
+        "soil_type",
+      ]
+      traced_vars: [
+        "2m_temperature",
+        "mean_sea_level_pressure",
+        "10m_u_component_of_wind",
+        "10m_v_component_of_wind",
+        "geopotential_50",
+        "geopotential_250",
+        "geopotential_500",
+        "geopotential_600",
+        "geopotential_700",
+        "geopotential_850",
+        "geopotential_925",
+        "u_component_of_wind_50",
+        "u_component_of_wind_250",
+        "u_component_of_wind_500",
+        "u_component_of_wind_600",
+        "u_component_of_wind_700",
+        "u_component_of_wind_850",
+        "u_component_of_wind_925",
+        "v_component_of_wind_50",
+        "v_component_of_wind_250",
+        "v_component_of_wind_500",
+        "v_component_of_wind_600",
+        "v_component_of_wind_700",
+        "v_component_of_wind_850",
+        "v_component_of_wind_925",
+        "temperature_50",
+        "temperature_250",
+        "temperature_500",
+        "temperature_600",
+        "temperature_700",
+        "temperature_850",
+        "temperature_925",
+        "specific_humidity_50",
+        "specific_humidity_250",
+        "specific_humidity_500",
+        "specific_humidity_600",
+        "specific_humidity_700",
+        "specific_humidity_850",
+        "specific_humidity_925",
+      ]
+      edge_dim: 8
+      hidden: 128
+      heads: 4
+      dropout: 0.2
+      n_layers: 2
+      non_local_embed: 128
+      n_blocks: 3
+      
+
+# ---------------------------- DATA -------------------------------------------
+data:
+  root_dir: /weatherbench2/WB2_240x121_npz
+  variables: ${model.net.init_args.traced_vars}
+  out_variables: ${model.net.init_args.traced_vars}
+  
+  history_range: 12
+  predict_range: 6
+  hrs_each_step: 6
+  buffer_size: 10
+  batch_size: 1
+  num_workers: 1
+  pin_memory: False
